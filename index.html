@@ -31,7 +31,7 @@
     const centerY = size / 2;
 
     // Physics
-    const gravity = 0.25;
+    const baseGravity = 0.25;   // Fallback when no device motion
     const friction = 0.998;
     const bounceDamping = 0.8;
 
@@ -106,12 +106,13 @@
 
     function update() {
       for (const ball of balls) {
-        // Gravity
-        ball.vy += gravity;
-
-        // Accelerometer (shake / tilt)
-        ball.vx += accelX;
-        ball.vy += accelY;
+        // Gravity: orientation tilt sets direction; fallback = straight down
+        if (hasOrientation) {
+          ball.vx += gravityX * gravityMagnitude;
+          ball.vy += gravityY * gravityMagnitude;
+        } else {
+          ball.vy += baseGravity;
+        }
 
         // Air friction
         ball.vx *= friction;
@@ -184,46 +185,54 @@
       }
     }
 
-    // --- Accelerometer / Shake detection ---
-    let accelX = 0;
-    let accelY = 0;
-    const shakeScale = 0.8;
+    // --- Gravity via Device Orientation ---
+    // Using deviceorientation (beta/gamma angles) instead of
+    // accelerationIncludingGravity, which has inconsistent sign
+    // conventions across browsers and devices.
+    let gravityX = 0;
+    let gravityY = 0;
+    let hasOrientation = false;
+    const gravityMagnitude = 0.4;
+    const orientationSmoothing = 0.15;
 
-    function handleMotion(e) {
-      const acc = e.accelerationIncludingGravity;
-      if (!acc || acc.x == null) return;
-      // Device acceleration: x is left/right, y is up/down
-      // We map device axes to canvas axes (negate x so tilting right moves right)
-      accelX = -acc.x * shakeScale;
-      accelY = acc.y * shakeScale;
+    function handleOrientation(e) {
+      if (e.beta === null || e.gamma === null) return;
+      hasOrientation = true;
+
+      const betaRad = e.beta * Math.PI / 180;
+      const gammaRad = e.gamma * Math.PI / 180;
+
+      // beta  = 90° upright → sin(90°) = 1 → full downward pull on canvas
+      // gamma > 0  tilted right → sin > 0 → rightward pull on canvas
+      const targetGX = Math.sin(gammaRad);
+      const targetGY = Math.sin(betaRad);
+
+      gravityX += (targetGX - gravityX) * orientationSmoothing;
+      gravityY += (targetGY - gravityY) * orientationSmoothing;
     }
 
-    // iOS 13+ requires permission request for motion events
-    function enableMotion() {
-      if (typeof DeviceMotionEvent !== "undefined" &&
-          typeof DeviceMotionEvent.requestPermission === "function") {
-        DeviceMotionEvent.requestPermission().then((state) => {
+    // iOS 13+ requires user-gesture permission for orientation events
+    const needsPermission = typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function";
+
+    function enableOrientation() {
+      if (needsPermission) {
+        DeviceOrientationEvent.requestPermission().then((state) => {
           if (state === "granted") {
-            window.addEventListener("devicemotion", handleMotion);
+            window.addEventListener("deviceorientation", handleOrientation);
           }
-        });
-      } else if (typeof DeviceMotionEvent !== "undefined") {
-        window.addEventListener("devicemotion", handleMotion);
+        }).catch(() => {});
+      } else if (typeof DeviceOrientationEvent !== "undefined") {
+        window.addEventListener("deviceorientation", handleOrientation);
       }
     }
 
-    // Request permission on first user interaction (required by iOS)
-    document.addEventListener("click", function motionPermission() {
-      enableMotion();
-      document.removeEventListener("click", motionPermission);
-    }, { once: true });
-    document.addEventListener("touchstart", function motionPermission() {
-      enableMotion();
-      document.removeEventListener("touchstart", motionPermission);
-    }, { once: true });
-
-    // Also try enabling immediately (works on Android / desktop)
-    enableMotion();
+    if (needsPermission) {
+      document.addEventListener("click", () => enableOrientation(), { once: true });
+      document.addEventListener("touchstart", () => enableOrientation(), { once: true });
+    } else {
+      enableOrientation();
+    }
 
     // --- Touch / Mouse interaction ---
     const flickStrength = 12;
