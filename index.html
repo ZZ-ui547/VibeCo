@@ -198,11 +198,11 @@
       const acc = e.accelerationIncludingGravity;
       if (!acc || acc.x == null) return;
       hasDeviceMotion = true;
-      // Device axes → canvas axes:
-      //   -acc.x : tilting right moves balls right
-      //    acc.y : phone upright → balls fall down (canvas y flipped vs device y)
-      const targetX = -acc.x * tiltScale;
-      const targetY = acc.y * tiltScale;
+      // accelerationIncludingGravity reports gravity as a vector (e.g. y ≈ -9.8 upright)
+      // Canvas: +x = right, +y = down.  Device: +x = right, +y = up.
+      // So: canvas_x = acc.x, canvas_y = -acc.y
+      const targetX = acc.x * tiltScale;
+      const targetY = -acc.y * tiltScale;
       // Exponential moving average for smooth, natural response
       accelX += (targetX - accelX) * smoothing;
       accelY += (targetY - accelY) * smoothing;
