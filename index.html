@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bouncing Balls</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #111;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // Arena settings
+    const arenaRadius = Math.min(window.innerWidth, window.innerHeight) * 0.42;
+    const size = arenaRadius * 2 + 40;
+    canvas.width = size;
+    canvas.height = size;
+    const centerX = size / 2;
+    const centerY = size / 2;
+
+    // Physics
+    const gravity = 0.25;
+    const friction = 0.998;
+    const bounceDamping = 0.8;
+
+    // Ball colours
+    const colours = ["#FF4136", "#FFDC00", "#2ECC40", "#FF851B", "#B10DC9"];
+
+    // Create balls
+    const ballRadius = arenaRadius * 0.07;
+    const balls = colours.map((colour) => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * (arenaRadius * 0.5);
+      return {
+        x: centerX + Math.cos(angle) * dist,
+        y: centerY + Math.sin(angle) * dist - arenaRadius * 0.3,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.5) * 2,
+        radius: ballRadius,
+        colour,
+      };
+    });
+
+    function resolveCircularBoundary(ball) {
+      const dx = ball.x - centerX;
+      const dy = ball.y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = arenaRadius - ball.radius;
+
+      if (dist > maxDist) {
+        // Normalise the direction from center to ball
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Place ball back on the boundary
+        ball.x = centerX + nx * maxDist;
+        ball.y = centerY + ny * maxDist;
+
+        // Reflect velocity across the boundary normal
+        const dot = ball.vx * nx + ball.vy * ny;
+        ball.vx = (ball.vx - 2 * dot * nx) * bounceDamping;
+        ball.vy = (ball.vy - 2 * dot * ny) * bounceDamping;
+      }
+    }
+
+    function resolveBallCollision(a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = a.radius + b.radius;
+
+      if (dist < minDist && dist > 0) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Separate the balls
+        const overlap = (minDist - dist) / 2;
+        a.x -= nx * overlap;
+        a.y -= ny * overlap;
+        b.x += nx * overlap;
+        b.y += ny * overlap;
+
+        // Elastic collision (equal mass)
+        const dvx = a.vx - b.vx;
+        const dvy = a.vy - b.vy;
+        const dot = dvx * nx + dvy * ny;
+
+        a.vx -= dot * nx;
+        a.vy -= dot * ny;
+        b.vx += dot * nx;
+        b.vy += dot * ny;
+      }
+    }
+
+    function update() {
+      for (const ball of balls) {
+        // Gravity
+        ball.vy += gravity;
+
+        // Air friction
+        ball.vx *= friction;
+        ball.vy *= friction;
+
+        // Move
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+
+        // Bounce off circular boundary
+        resolveCircularBoundary(ball);
+      }
+
+      // Ball-to-ball collisions
+      for (let i = 0; i < balls.length; i++) {
+        for (let j = i + 1; j < balls.length; j++) {
+          resolveBallCollision(balls[i], balls[j]);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, size, size);
+
+      // Draw the circular blue arena
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, arenaRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a3a5c";
+      ctx.fill();
+
+      // Subtle inner glow
+      const gradient = ctx.createRadialGradient(
+        centerX, centerY - arenaRadius * 0.3, 0,
+        centerX, centerY, arenaRadius
+      );
+      gradient.addColorStop(0, "rgba(100, 160, 220, 0.15)");
+      gradient.addColorStop(1, "rgba(10, 30, 60, 0)");
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, arenaRadius, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Arena border
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, arenaRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = "#3a7bd5";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Draw balls
+      for (const ball of balls) {
+        // Ball shadow
+        ctx.beginPath();
+        ctx.arc(ball.x + 2, ball.y + 2, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+        ctx.fill();
+
+        // Ball body
+        const ballGrad = ctx.createRadialGradient(
+          ball.x - ball.radius * 0.3, ball.y - ball.radius * 0.3, ball.radius * 0.1,
+          ball.x, ball.y, ball.radius
+        );
+        ballGrad.addColorStop(0, "#fff");
+        ballGrad.addColorStop(0.3, ball.colour);
+        ballGrad.addColorStop(1, ball.colour);
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ballGrad;
+        ctx.fill();
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
