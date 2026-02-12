@@ -13,7 +13,7 @@
       min-height: 100vh;
       background: #111;
     }
-    canvas { display: block; }
+    canvas { display: block; touch-action: none; }
   </style>
 </head>
 <body>
@@ -179,6 +179,96 @@
         ctx.fill();
       }
     }
+
+    // --- Touch / Mouse interaction ---
+    const flickStrength = 12;
+
+    function getCanvasPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+      };
+    }
+
+    function hitTest(px, py) {
+      for (const ball of balls) {
+        const dx = px - ball.x;
+        const dy = py - ball.y;
+        if (dx * dx + dy * dy <= ball.radius * ball.radius) return ball;
+      }
+      return null;
+    }
+
+    let dragging = null;
+    let dragStart = null;
+    let dragPrev = null;
+
+    function onPointerDown(e) {
+      e.preventDefault();
+      const pos = getCanvasPos(e);
+      const ball = hitTest(pos.x, pos.y);
+      if (ball) {
+        dragging = ball;
+        dragStart = { x: pos.x, y: pos.y, t: performance.now() };
+        dragPrev = { x: pos.x, y: pos.y, t: performance.now() };
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      const pos = getCanvasPos(e);
+      dragPrev = { x: pos.x, y: pos.y, t: performance.now() };
+    }
+
+    function onPointerUp(e) {
+      if (!dragging) return;
+      e.preventDefault();
+
+      const pos = e.changedTouches
+        ? { x: (e.changedTouches[0].clientX - canvas.getBoundingClientRect().left) * (canvas.width / canvas.getBoundingClientRect().width),
+            y: (e.changedTouches[0].clientY - canvas.getBoundingClientRect().top) * (canvas.height / canvas.getBoundingClientRect().height) }
+        : getCanvasPos(e);
+
+      const dt = Math.max(1, performance.now() - dragPrev.t) / 16;
+      const dvx = (pos.x - dragStart.x) / dt;
+      const dvy = (pos.y - dragStart.y) / dt;
+      const speed = Math.sqrt(dvx * dvx + dvy * dvy);
+
+      if (speed < 0.5) {
+        // Tap — kick the ball away from the touch point
+        const dx = dragging.x - pos.x;
+        const dy = dragging.y - pos.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        dragging.vx += (dx / dist) * flickStrength;
+        dragging.vy += (dy / dist) * flickStrength;
+      } else {
+        // Flick — launch in drag direction
+        const cap = flickStrength;
+        const scale = Math.min(cap / speed, 1);
+        dragging.vx += dvx * scale * flickStrength;
+        dragging.vy += dvy * scale * flickStrength;
+      }
+
+      dragging = null;
+      dragStart = null;
+      dragPrev = null;
+    }
+
+    // Mouse events
+    canvas.addEventListener("mousedown", onPointerDown);
+    canvas.addEventListener("mousemove", onPointerMove);
+    canvas.addEventListener("mouseup", onPointerUp);
+
+    // Touch events
+    canvas.addEventListener("touchstart", onPointerDown, { passive: false });
+    canvas.addEventListener("touchmove", onPointerMove, { passive: false });
+    canvas.addEventListener("touchend", onPointerUp, { passive: false });
 
     function loop() {
       update();
