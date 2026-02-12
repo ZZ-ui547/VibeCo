@@ -199,31 +199,30 @@
     }
 
     // iOS 13+ requires permission request for motion events
+    const needsPermission = typeof DeviceMotionEvent !== "undefined" &&
+        typeof DeviceMotionEvent.requestPermission === "function";
+
     function enableMotion() {
-      if (typeof DeviceMotionEvent !== "undefined" &&
-          typeof DeviceMotionEvent.requestPermission === "function") {
+      if (needsPermission) {
         DeviceMotionEvent.requestPermission().then((state) => {
           if (state === "granted") {
             window.addEventListener("devicemotion", handleMotion);
           }
-        });
+        }).catch(() => {});
       } else if (typeof DeviceMotionEvent !== "undefined") {
         window.addEventListener("devicemotion", handleMotion);
       }
     }
 
-    // Request permission on first user interaction (required by iOS)
-    document.addEventListener("click", function motionPermission() {
+    // On iOS, requestPermission MUST be called from a user gesture —
+    // calling it eagerly poisons future attempts, so only attach to taps.
+    if (needsPermission) {
+      document.addEventListener("click", () => enableMotion(), { once: true });
+      document.addEventListener("touchstart", () => enableMotion(), { once: true });
+    } else {
+      // Android / desktop: no permission needed, enable immediately
       enableMotion();
-      document.removeEventListener("click", motionPermission);
-    }, { once: true });
-    document.addEventListener("touchstart", function motionPermission() {
-      enableMotion();
-      document.removeEventListener("touchstart", motionPermission);
-    }, { once: true });
-
-    // Also try enabling immediately (works on Android / desktop)
-    enableMotion();
+    }
 
     // --- Touch / Mouse interaction ---
     const flickStrength = 12;
