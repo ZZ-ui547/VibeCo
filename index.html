@@ -109,6 +109,10 @@
         // Gravity
         ball.vy += gravity;
 
+        // Accelerometer (shake / tilt)
+        ball.vx += accelX;
+        ball.vy += accelY;
+
         // Air friction
         ball.vx *= friction;
         ball.vy *= friction;
@@ -179,6 +183,47 @@
         ctx.fill();
       }
     }
+
+    // --- Accelerometer / Shake detection ---
+    let accelX = 0;
+    let accelY = 0;
+    const shakeScale = 0.8;
+
+    function handleMotion(e) {
+      const acc = e.accelerationIncludingGravity;
+      if (!acc || acc.x == null) return;
+      // Device acceleration: x is left/right, y is up/down
+      // We map device axes to canvas axes (negate x so tilting right moves right)
+      accelX = -acc.x * shakeScale;
+      accelY = acc.y * shakeScale;
+    }
+
+    // iOS 13+ requires permission request for motion events
+    function enableMotion() {
+      if (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") {
+        DeviceMotionEvent.requestPermission().then((state) => {
+          if (state === "granted") {
+            window.addEventListener("devicemotion", handleMotion);
+          }
+        });
+      } else if (typeof DeviceMotionEvent !== "undefined") {
+        window.addEventListener("devicemotion", handleMotion);
+      }
+    }
+
+    // Request permission on first user interaction (required by iOS)
+    document.addEventListener("click", function motionPermission() {
+      enableMotion();
+      document.removeEventListener("click", motionPermission);
+    }, { once: true });
+    document.addEventListener("touchstart", function motionPermission() {
+      enableMotion();
+      document.removeEventListener("touchstart", motionPermission);
+    }, { once: true });
+
+    // Also try enabling immediately (works on Android / desktop)
+    enableMotion();
 
     // --- Touch / Mouse interaction ---
     const flickStrength = 12;
