@@ -106,15 +106,13 @@
 
     function update() {
       for (const ball of balls) {
-        // Gravity: device tilt IS the gravity when available,
-        // otherwise fall back to constant downward pull
-        if (!hasDeviceMotion) {
+        // Gravity: orientation tilt sets direction; fallback = straight down
+        if (hasOrientation) {
+          ball.vx += gravityX * gravityMagnitude;
+          ball.vy += gravityY * gravityMagnitude;
+        } else {
           ball.vy += baseGravity;
         }
-
-        // Tilt-driven gravity (includes Earth's gravity direction)
-        ball.vx += accelX;
-        ball.vy += accelY;
 
         // Air friction
         ball.vx *= friction;
@@ -187,51 +185,53 @@
       }
     }
 
-    // --- Accelerometer / Tilt gravity ---
-    let accelX = 0;
-    let accelY = 0;
-    let hasDeviceMotion = false;
-    const tiltScale = 0.04;    // Maps ~9.8 m/s² → ~0.39 px/frame² (natural feel)
-    const smoothing = 0.3;     // EMA smoothing to reduce jitter (0 = frozen, 1 = raw)
+    // --- Gravity via Device Orientation ---
+    // Using deviceorientation (beta/gamma angles) instead of
+    // accelerationIncludingGravity, which has inconsistent sign
+    // conventions across browsers and devices.
+    let gravityX = 0;
+    let gravityY = 0;
+    let hasOrientation = false;
+    const gravityMagnitude = 0.4;
+    const orientationSmoothing = 0.15;
 
-    function handleMotion(e) {
-      const acc = e.accelerationIncludingGravity;
-      if (!acc || acc.x == null) return;
-      hasDeviceMotion = true;
-      // accelerationIncludingGravity reports gravity as a vector (e.g. y ≈ -9.8 upright)
-      // Canvas: +x = right, +y = down.  Device: +x = right, +y = up.
-      // So: canvas_x = acc.x, canvas_y = -acc.y
-      const targetX = acc.x * tiltScale;
-      const targetY = -acc.y * tiltScale;
-      // Exponential moving average for smooth, natural response
-      accelX += (targetX - accelX) * smoothing;
-      accelY += (targetY - accelY) * smoothing;
+    function handleOrientation(e) {
+      if (e.beta === null || e.gamma === null) return;
+      hasOrientation = true;
+
+      const betaRad = e.beta * Math.PI / 180;
+      const gammaRad = e.gamma * Math.PI / 180;
+
+      // beta  = 90° upright → sin(90°) = 1 → full downward pull on canvas
+      // gamma > 0  tilted right → sin > 0 → rightward pull on canvas
+      const targetGX = Math.sin(gammaRad);
+      const targetGY = Math.sin(betaRad);
+
+      gravityX += (targetGX - gravityX) * orientationSmoothing;
+      gravityY += (targetGY - gravityY) * orientationSmoothing;
     }
 
-    // iOS 13+ requires permission request for motion events
-    const needsPermission = typeof DeviceMotionEvent !== "undefined" &&
-        typeof DeviceMotionEvent.requestPermission === "function";
+    // iOS 13+ requires user-gesture permission for orientation events
+    const needsPermission = typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function";
 
-    function enableMotion() {
+    function enableOrientation() {
       if (needsPermission) {
-        DeviceMotionEvent.requestPermission().then((state) => {
+        DeviceOrientationEvent.requestPermission().then((state) => {
           if (state === "granted") {
-            window.addEventListener("devicemotion", handleMotion);
+            window.addEventListener("deviceorientation", handleOrientation);
           }
         }).catch(() => {});
-      } else if (typeof DeviceMotionEvent !== "undefined") {
-        window.addEventListener("devicemotion", handleMotion);
+      } else if (typeof DeviceOrientationEvent !== "undefined") {
+        window.addEventListener("deviceorientation", handleOrientation);
       }
     }
 
-    // On iOS, requestPermission MUST be called from a user gesture —
-    // calling it eagerly poisons future attempts, so only attach to taps.
     if (needsPermission) {
-      document.addEventListener("click", () => enableMotion(), { once: true });
-      document.addEventListener("touchstart", () => enableMotion(), { once: true });
+      document.addEventListener("click", () => enableOrientation(), { once: true });
+      document.addEventListener("touchstart", () => enableOrientation(), { once: true });
     } else {
-      // Android / desktop: no permission needed, enable immediately
-      enableMotion();
+      enableOrientation();
     }
 
     // --- Touch / Mouse interaction ---
