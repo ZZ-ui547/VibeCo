@@ -31,7 +31,7 @@
     const centerY = size / 2;
 
     // Physics
-    const gravity = 0.25;
+    const baseGravity = 0.25;   // Fallback when no device motion
     const friction = 0.998;
     const bounceDamping = 0.8;
 
@@ -106,10 +106,13 @@
 
     function update() {
       for (const ball of balls) {
-        // Gravity
-        ball.vy += gravity;
+        // Gravity: device tilt IS the gravity when available,
+        // otherwise fall back to constant downward pull
+        if (!hasDeviceMotion) {
+          ball.vy += baseGravity;
+        }
 
-        // Accelerometer (shake / tilt)
+        // Tilt-driven gravity (includes Earth's gravity direction)
         ball.vx += accelX;
         ball.vy += accelY;
 
@@ -184,18 +187,25 @@
       }
     }
 
-    // --- Accelerometer / Shake detection ---
+    // --- Accelerometer / Tilt gravity ---
     let accelX = 0;
     let accelY = 0;
-    const shakeScale = 0.8;
+    let hasDeviceMotion = false;
+    const tiltScale = 0.04;    // Maps ~9.8 m/s² → ~0.39 px/frame² (natural feel)
+    const smoothing = 0.3;     // EMA smoothing to reduce jitter (0 = frozen, 1 = raw)
 
     function handleMotion(e) {
       const acc = e.accelerationIncludingGravity;
       if (!acc || acc.x == null) return;
-      // Device acceleration: x is left/right, y is up/down
-      // We map device axes to canvas axes (negate x so tilting right moves right)
-      accelX = -acc.x * shakeScale;
-      accelY = acc.y * shakeScale;
+      hasDeviceMotion = true;
+      // Device axes → canvas axes:
+      //   -acc.x : tilting right moves balls right
+      //    acc.y : phone upright → balls fall down (canvas y flipped vs device y)
+      const targetX = -acc.x * tiltScale;
+      const targetY = acc.y * tiltScale;
+      // Exponential moving average for smooth, natural response
+      accelX += (targetX - accelX) * smoothing;
+      accelY += (targetY - accelY) * smoothing;
     }
 
     // iOS 13+ requires permission request for motion events
